@@ -1,0 +1,1002 @@
+///////// trying to use  SQL
+CREATE DATABASE project;
+
+//////// import the chunks1 of the 3 datasets
+//// already turned power and temperature into an hour inerval in mongo db
+
+///  sql would not work since there is no relationship between the 3 tables even we cannot normalise our data that is why is better to use mongo db that treats each collection by itself,
+/// if we want to normalised the data we should get foreignkeys but my 3 table do not have relationship between them.
+
+
+/// even though I tried to give some analysis based on the tables i already have but not a lot since the data is not normalised 
+
+
+////////Average Rainfall by Month: 
+
+SELECT DATE_FORMAT(date, '%Y-%m') AS month,
+       AVG(rain) AS avg_rainfall
+FROM hourly_dublin_sql
+GROUP BY month
+ORDER BY month;
+
+
+////// MAX Rainfall by Month
+
+SELECT DATE_FORMAT(date, '%Y-%m') AS month,
+       MAX(rain) AS MAX_rainfall
+FROM hourly_dublin_sql
+GROUP BY month
+ORDER BY month;
+
+//// MIN Rainfall by Month
+
+SELECT DATE_FORMAT(date, '%Y-%m') AS month,
+       MIN(rain) AS max_rainfall
+FROM hourly_dublin_sql
+GROUP BY month
+ORDER BY month;
+
+////////Average power by Month: 
+
+SELECT DATE_FORMAT(date_p, '%Y-%m') AS month,
+       AVG(power_by_hour) AS min_power
+FROM hourly_power_sql
+GROUP BY month
+ORDER BY month;
+
+
+/////  Max power by Month: 
+SELECT DATE_FORMAT(date_p, '%Y-%m') AS month,
+       MAX(power_by_hour) AS max_power
+FROM hourly_power_sql
+GROUP BY month
+ORDER BY month;
+
+//// Min power by Month: 
+
+SELECT DATE_FORMAT(date_p, '%Y-%m') AS month,
+       MIN(power_by_hour) AS min_power
+FROM hourly_power_sql
+GROUP BY month
+ORDER BY month;
+
+
+
+////Average temperature by Month: 
+
+SELECT DATE_FORMAT(date_t, '%Y-%m') AS month,
+       AVG(average_temperature) AS avg_temp_by_month
+FROM hourly_temperature_sql
+GROUP BY month
+ORDER BY month;
+
+
+/// Max temperature by Month: 
+
+SELECT DATE_FORMAT(date_t, '%Y-%m') AS month,
+       MAX(average_temperature) AS max_temp_by_month
+FROM hourly_temperature_sql
+GROUP BY month
+ORDER BY month;
+
+
+
+
+//// Min temperature by Month: 
+
+SELECT DATE_FORMAT(date_t, '%Y-%m') AS month,
+       MIN(average_temperature) AS min_temp_by_month
+FROM hourly_temperature_sql
+GROUP BY month
+ORDER BY month;
+
+
+//// USING MONGOBD FOR THE REST OF THE PROJECT
+
+
+//// working with mongo db since sql is not efficient.
+
+// changing date column into date iso format in hourly_dublin
+db.hourly_dublin.updateMany(
+    {},
+    [
+        {
+            $set: {
+                date: {
+                    $toDate: {
+                        $concat: [
+                            { $substr: ["$date", 6, 4] }, "-", 
+                            { $substr: ["$date", 3, 2] }, "-", 
+                            { $substr: ["$date", 0, 2] }, "T", 
+                            { $substr: ["$date", 11, 2] }, ":", 
+                            { $substr: ["$date", 14, 2] }, ":00Z" 
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+);
+
+
+
+// changing date column into date iso format in home_temperature
+db.home_temperature.updateMany( 
+    {},
+    [
+        {
+            $set: {
+                date: {
+                    $dateFromString: {
+                        dateString: "$date",
+                        format: "%d/%m/%Y %H:%M"
+                    }
+                }
+            }
+        }
+    ]
+);
+
+
+///  changing date column into date iso format in  home_power
+db.home_power.updateMany(
+    {},
+    [
+        {
+            $set: {
+                date: {
+                    $dateFromString: {
+                        dateString: "$date",
+                        format: "%d/%m/%Y %H:%M"
+                    }
+                }
+            }
+        }
+    ]
+);
+
+/// new power collection that has the units of date in hour and the sum of all power enteries within an hour.
+
+db.home_power.aggregate([
+  {
+    $group: {
+      _id: {
+        $toDate: {
+          $dateToString: { format: "%Y-%m-%d %H:00:00", date: { $toDate: "$date" } }
+        }
+      },
+      power_by_hour: { $sum: "$power" }
+    }
+  },
+  {
+    $sort: { "_id": 1 }
+  },
+  {
+    $project: {
+      _id: 0,
+      date_p: "$_id",
+      power_by_hour: 1
+    }
+  },
+  {
+    $out: "hourly_power"
+  }
+])
+
+
+
+
+// new temp collection that has the units of date in hour and the average of all temperature entries within an hour.
+
+db.home_temperature.aggregate([
+  {
+    $group: {
+      _id: {
+        $dateToString: { format: "%Y-%m-%d %H:00:00", date: { $toDate: "$date" } }
+      },
+      average_temperature: { $avg: "$temperature" }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      date_t: { $toDate: "$_id" },
+      average_temperature: 1
+    }
+  },
+  {
+    $sort: { date_t: 1 } // Sort by date in ascending order
+  },
+  {
+    $out: "hourly_temperature" // Save the result into a new collection called "hourly_temperature"
+  }
+]);
+
+
+
+/////// overall queries for analysis
+
+///////////hourly_dublin dataset 
+//////////Average Temperature for Each Day:
+
+db.hourly_dublin.aggregate([
+  {
+    $group: {
+      _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+      avg_temp: { $avg: "$temp" }
+    }
+  }
+])
+
+//////////Days with Rainfall Greater Than 0.5:
+
+
+db.hourly_dublin.find({ rain: { $gt: 0.5 } })
+/////// their count
+db.hourly_dublin.count({ wdsp: { $gt: 15 } })  
+
+///////Days with Low Humidity (Less Than 70):
+
+db.hourly_dublin.find({ rhum: { $lt: 70 } })
+db.hourly_dublin.count({ rhum: { $lt: 70 } })  
+
+///////Days with Rainfall and High Temperature (<30°C)
+
+db.hourly_dublin.find({ $and: [{ rain: { $gt: 0 } }, { temp: { $lt: 30 } }] })
+
+
+////////////Count of Days with Humidity > 80 and Wind Speed < 10
+
+db.hourly_dublin.find({ $and: [{ rhum: { $gt: 80 } }, { wdsp: { $lt: 10 } }] }).count()
+
+////////////// Maximum Rainfall in a Day
+
+db.hourly_dublin.aggregate([
+  {
+    $group: {
+      _id: null,
+      max_rain: { $max: "$rain" }
+    }
+  }
+])
+
+/////////////Average Temperature by Year with Top 5 Hottest Years
+
+db.hourly_dublin.aggregate([
+  {
+    $group: {
+      _id: { $year: "$date" },
+      avg_temp: { $avg: "$temp" }
+    }
+  },
+  {
+    $sort: { avg_temp: -1 }
+  },
+  {
+    $limit: 2
+  }
+])
+
+
+///////////Count of Days with Sunlight and Visibility by Year:
+
+db.hourly_dublin.aggregate([
+  {
+    $match: { sun: { $gt: 0 }, vis: { $gt: 30000 } }
+  },
+  {
+    $group: {
+      _id: { year: { $year: "$date" } },
+      count: { $sum: 1 }
+    }
+  },
+  {
+    $sort: { "_id.year": 1 }
+  }
+])
+
+
+///////// Categorizing Temperature into Ranges and giving their counts:
+
+
+db.hourly_dublin.aggregate([
+  {
+    $project: {
+      temp: 1,
+      temp_category: {
+        $cond: {
+          if: { $lt: ["$temp", 10] },
+          then: "Cold",
+          else: {
+            $cond: {
+              if: { $gte: ["$temp", 20] },
+              then: "Hot",
+              else: "Moderate"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$temp_category",
+      count: { $sum: 1 }
+    }
+  }
+])
+
+////////////// Categorizing Days Based on Sunlight and Wind Speed:
+
+
+db.hourly_dublin.aggregate([
+  {
+    $project: {
+      date: 1,
+      conditions: {
+        $cond: {
+          if: { $and: [ { $gt: ["$sun", 0] }, { $lt: ["$wdsp", 10] } ] },
+          then: "Good",
+          else: "Poor"
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$conditions",
+      count: { $sum: 1 }
+    }
+  }
+])
+
+///////////// "Cold and Rainy" if the temperature is less than or equal to 5°C and rainfall is greater than 0.
+///////////// "Moderate" if the temperature is between 5°C and 15°C and there is no rainfall.
+///////////// "Warm and Dry" if the temperature is greater than 15°C and there is no rainfall.
+
+db.hourly_dublin.aggregate([
+  {
+    $project: {
+      _id: 1,
+      date: 1,
+      temp: 1,
+      rain: 1,
+      weather_condition: {
+        $cond: {
+          if: {
+            $and: [
+              { $lte: ["$temp", 5] },
+              { $gt: ["$rain", 0] }
+            ]
+          },
+          then: "Cold and Rainy",
+          else: {
+            $cond: {
+              if: {
+                $and: [
+                  { $gt: ["$temp", 5] },
+                  { $lte: ["$temp", 15] },
+                  { $eq: ["$rain", 0] }
+                ]
+              },
+              then: "Moderate",
+              else: {
+                $cond: {
+                  if: {
+                    $and: [
+                      { $gt: ["$temp", 15] },
+                      { $eq: ["$rain", 0] }
+                    ]
+                  },
+                  then: "Warm and Dry",
+                  else: "Other"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$weather_condition",
+      count: { $sum: 1 }
+    }
+  }
+])
+
+
+
+//////////// "High Wind and Low Visibility" if the wind speed is greater than 15 knots and visibility is less than 5000 meters.
+//////////// "Low Wind and High Visibility" if the wind speed is less than or equal to 10 knots and visibility is greater than or equal to 10000 meters.
+//////////// "Other" for all other cases.
+
+db.hourly_dublin.aggregate([
+  {
+    $project: {
+      _id: 1,
+      date: 1,
+      wdsp: 1,
+      vis: 1,
+      weather_condition: {
+        $cond: {
+          if: {
+            $and: [
+              { $gt: ["$wdsp", 15] },
+              { $lt: ["$vis", 5000] }
+            ]
+          },
+          then: "High Wind and Low Visibility",
+          else: {
+            $cond: {
+              if: {
+                $and: [
+                  { $lte: ["$wdsp", 10] },
+                  { $gte: ["$vis", 10000] }
+                ]
+              },
+              then: "Low Wind and High Visibility",
+              else: "Other"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$weather_condition",
+      count: { $sum: 1 }
+    }
+  }
+])
+
+////////// "No Rain" for days with rainfall equal to 0 mm.
+////////// "Light Rain" for days with rainfall between 0.1 mm and 5 mm.
+////////// "Moderate Rain" for days with rainfall between 5.1 mm and 20 mm.
+////////// "Heavy Rain" for days with rainfall greater than 20 mm.
+
+db.hourly_dublin.aggregate([
+  {
+    $project: {
+      _id: 1,
+      date: 1,
+      rain: 1,
+      temp: 1,
+      rainfall_level: {
+        $cond: {
+          if: { $eq: ["$rain", 0] },
+          then: "No Rain",
+          else: {
+            $cond: {
+              if: { $and: [{ $gt: ["$rain", 0.1] }, { $lte: ["$rain", 5] }] },
+              then: "Light Rain",
+              else: {
+                $cond: {
+                  if: { $and: [{ $gt: ["$rain", 5] }, { $lte: ["$rain", 20] }] },
+                  then: "Moderate Rain",
+                  else: "Heavy Rain"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$rainfall_level",
+      avg_temperature: { $avg: "$temp" }
+    }
+  }
+])
+
+
+///////// This query first filters the documents to include only those with high wind speed and moderate humidity. Then it calculates the maximum temperature among these filtered documents.
+
+db.hourly_dublin.aggregate([
+  {
+    $match: {
+      wdsp: { $gt: 15 }, // Filter for high wind speed
+      rhum: { $gte: 70, $lte: 80 } // Filter for moderate humidity
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      max_temperature: { $max: "$temp" } // Find the maximum temperature
+    }
+  }
+])
+
+///////////// This query first filters the documents to include only those with a temperature above 25°C and no rain. Then it calculates the average visibility among these filtered documents.
+
+db.hourly_dublin.aggregate([
+  {
+    $match: {
+      temp: { $gt: 25 }, // Filter for temperature above 25°C
+      rain: 0 // Filter for no rain
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      avg_visibility: { $avg: "$vis" } // Calculate the average visibility
+    }
+  }
+])
+
+
+//////////// mean st dev max min of columns
+
+db.hourly_dublin.aggregate([
+  {
+    $group: {
+      _id: null,
+      mean_rain: { $avg: "$rain" },
+      mean_temp: { $avg: "$temp" },
+      mean_rhum: { $avg: "$rhum" },
+      mean_wdsp: { $avg: "$wdsp" },
+      mean_sun: { $avg: "$sun" },
+      mean_vis: { $avg: "$vis" },
+      max_rain: { $max: "$rain" },
+      max_temp: { $max: "$temp" },
+      max_rhum: { $max: "$rhum" },
+      max_wdsp: { $max: "$wdsp" },
+      max_sun: { $max: "$sun" },
+      max_vis: { $max: "$vis" },
+      min_rain: { $min: "$rain" },
+      min_temp: { $min: "$temp" },
+      min_rhum: { $min: "$rhum" },
+      min_wdsp: { $min: "$wdsp" },
+      min_sun: { $min: "$sun" },
+      min_vis: { $min: "$vis" },
+      stddev_rain: { $stdDevPop: "$rain" },
+      stddev_temp: { $stdDevPop: "$temp" },
+      stddev_rhum: { $stdDevPop: "$rhum" },
+      stddev_wdsp: { $stdDevPop: "$wdsp" },
+      stddev_sun: { $stdDevPop: "$sun" },
+      stddev_vis: { $stdDevPop: "$vis" }
+      
+    }
+  },
+  {
+    $project: {
+      _id: 0 
+    }
+  }
+])
+
+///////// joining collections with look up function
+
+
+/////// This query allows  to analyze the relationship between temperature and power consumption over time. 
+
+db.hourly_temperature.aggregate([
+  {
+    $lookup: {
+      from: "hourly_power",
+      localField: "date_t",
+      foreignField: "date_p",
+      as: "power_data"
+    }
+  },
+  {
+    $unwind: "$power_data"
+  },
+  {
+    $project: {
+      _id: 0,
+      temperature: "$average_temperature",
+      power_consumption: "$power_data.power_by_hour",
+      date: "$date_t"
+    }
+  }
+]);
+
+
+
+/////// This will give you a combined query containing power consumption data, temperature data, and weather data 
+for each hour.
+
+db.hourly_power.aggregate([
+  {
+    $lookup: {
+      from: "hourly_temperature",
+      localField: "date_p",
+      foreignField: "date_t",
+      as: "temperature"
+    }
+  },
+  {
+    $unwind: "$temperature"
+  },
+  {
+    $lookup: {
+      from: "hourly_dublin",
+      localField: "date_p",
+      foreignField: "date",
+      as: "dublin_weather"
+    }
+  },
+  {
+    $unwind: "$dublin_weather"
+  },
+  {
+    $project: {
+      _id: 1,
+      date_p: 1,
+      power_by_hour: 1,
+      temperature: "$temperature.average_temperature",
+      dublin_weather: {
+        rain: "$dublin_weather.rain",
+        temp: "$dublin_weather.temp",
+        rhum: "$dublin_weather.rhum",
+        wdsp: "$dublin_weather.wdsp",
+        sun: "$dublin_weather.sun",
+        vis: "$dublin_weather.vis"
+      }
+    }
+  }
+]);
+
+
+
+//////// This query will give you a result where each document contains temperature, power consumption,
+ and weather data for a specific date and time, allowing you to analyze the relationships between these factors. 
+
+
+db.hourly_temperature.aggregate([
+  {
+    $lookup: {
+      from: "hourly_power",
+      let: { date_t: "$date_t" },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ["$date_p", "$$date_t"] }
+          }
+        }
+      ],
+      as: "power_data"
+    }
+  },
+  {
+    $lookup: {
+      from: "hourly_dublin",
+      let: { date_t: "$date_t" },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ["$date", "$$date_t"] }
+          }
+        }
+      ],
+      as: "weather_data"
+    }
+  },
+  {
+    $unwind: "$power_data"
+  },
+  {
+    $unwind: "$weather_data"
+  },
+  {
+    $project: {
+      _id: 1,
+      date_t: 1,
+      average_temperature: 1,
+      power_by_hour: "$power_data.power_by_hour",
+      weather: "$weather_data"
+    }
+  }
+]);
+
+/////// This query provides insights into the average power consumption and temperature for each month, it allows for further analysis of months and seasons and their impact on energy usage. 
+
+
+db.hourly_power.aggregate([
+  {
+    $group: {
+      _id: {
+        year: { $year: "$date_p" },
+        month: { $month: "$date_p" }
+      },
+      avg_power: { $avg: "$power_by_hour" }
+    }
+  },
+  {
+    $lookup: {
+      from: "hourly_temperature",
+      let: { month: "$_id.month", year: "$_id.year" },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: [{ $month: "$date_t" }, "$$month"] },
+                { $eq: [{ $year: "$date_t" }, "$$year"] }
+              ]
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            avg_temperature: { $avg: "$average_temperature" }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            avg_temperature: 1
+          }
+        }
+      ],
+      as: "temperature_data"
+    }
+  },
+  {
+    $unwind: "$temperature_data"
+  },
+  {
+    $project: {
+      _id: 0,
+      year: "$_id.year",
+      month: "$_id.month",
+      avg_power: 1,
+      avg_temperature: "$temperature_data.avg_temperature"
+    }
+  }
+]);
+
+
+//////// This query provides insights about the hottest hours of each month along with their associated power consumption and temperature
+
+
+db.hourly_power.aggregate([
+  {
+    $group: {
+      _id: {
+        year: { $year: "$date_p" },
+        month: { $month: "$date_p" }
+      },
+      max_power: { $max: "$power_by_hour" }
+    }
+  },
+  {
+    $lookup: {
+      from: "hourly_temperature",
+      let: { month: "$_id.month", year: "$_id.year" },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: [{ $month: "$date_t" }, "$$month"] },
+                { $eq: [{ $year: "$date_t" }, "$$year"] }
+              ]
+            }
+          }
+        },
+        {
+          $sort: { average_temperature: -1 }
+        },
+        {
+          $limit: 1
+        }
+      ],
+      as: "temperature_data"
+    }
+  },
+  {
+    $unwind: "$temperature_data"
+  },
+  {
+    $project: {
+      _id: 0,
+      year: "$_id.year",
+      month: "$_id.month",
+      max_power: 1,
+      hottest_hour_temperature: "$temperature_data.average_temperature"
+    }
+  }
+]);
+
+
+
+
+////////// database security
+
+//// my user (data base administartor)
+
+db.createUser({
+  user: "israa",
+  pwd: passwordPrompt(),
+  roles: [ { role: "dbOwner", db: "project" } ]
+});
+
+
+////  anesu user
+
+db.createUser({
+  user: "Anesu",
+  pwd: passwordPrompt(),
+  roles: [ { role: "read", db: "project" } ]
+});
+
+
+///////// data scientist/ analyst
+
+db.createUser({
+  user: "data_scientist",
+  pwd: passwordPrompt(),
+  roles: [{ role: "read", db: "project" }]
+});
+ 
+/////////// it support
+
+db.createUser({
+  user: "it_support",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "readWrite", db: "project"} // Administrative access to the MongoDB admin database
+  ]
+});
+
+///////////// weather data scientist/analyst
+
+db.createUser({
+  user: "weather_data_scientist",
+  pwd: passwordPrompt(),
+  roles: [{ role: "read", db: "project" }]
+});
+
+
+////////////// power data analyst
+
+
+db.createUser({
+  user: "power_data_scientist",
+  pwd: passwordPrompt(),
+  roles: [{ role: "read", db: "project" }]
+});
+
+/////// temp data analyst
+
+
+db.createUser({
+  user: "temp_data_scientist",
+  pwd: passwordPrompt(),
+  roles: [{ role: "read", db: "project" }]
+});
+ 
+
+
+///////////// data base developer
+
+db.createUser({
+  user: "database_developer",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "userAdmin", db: "project" } // Administrative privileges
+  ]
+});
+
+//// business analyst
+
+db.createUser({
+  user: "business_analyst",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "read", db: "project" } // Read-only access
+  ]
+});
+
+
+///// data provider
+
+db.createUser({
+  user: "data_provider",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "readWrite", db: "project" } // Grant read and write access to the database
+  ]
+});
+
+
+
+//////// steward
+
+
+db.createUser({
+  user: "data_steward",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "readWrite", db: "project" },
+    { role: "userAdmin", db: "project" }
+  ]
+});
+
+
+//////// views depedning on the data analyst/scientist/
+
+db.createView(
+   "hourly_dublin_weather_view",
+   "hourly_dublin",
+   [
+      { $project: { _id: 0, date: 1, rain: 1, temp: 1, rhum: 1, wdsp: 1, sun: 1, vis: 1 } }
+   ]
+);
+//// This view includes all weather-related fields from the "hourly_dublin" collection. It allows analysts to focus specifically on weather data without unnecessary information.
+///to check it
+
+db.hourly_dublin_weather_view.find()
+
+
+/////// This view retains only the date and power consumption fields from the "hourly_power" collection, It allows analysts to focus specifically on hourly power data without unnecessary information.
+db.createView(
+   "hourly_power_consumption_view",
+   "hourly_power",
+   [
+      { $project: { _id: 0, date_p: 1, power_by_hour: 1 } }
+   ]
+);
+
+
+
+////checking
+db.hourly_power_consumption_view.find()
+
+/// Similar to the previous views, this one includes only the date and average temperature fields from the "hourly_temperature" collection,
+ making it easier to analyze temperature trends.
+db.createView(
+   "hourly_temperature_view",
+   "hourly_temperature",
+   [
+      { $project: { _id: 0, date_t: 1, average_temperature: 1 } }
+   ]
+);
+/////to check them
+db.hourly_temperature_view.find()
+
+ 
+///// Then we can define a users role as we like to let them access what we they need for example each data scientist can access his
+ speciality
+ 
+ 
+ db.grantPrivilegesToRole("weather_data_scientist", [
+    { resource: { db: "project", collection: "hourly_dublin_weather_view" }, actions: ["find"] }
+]);
+
+ 
+ db.grantPrivilegesToRole("power_data_scientist", [
+    { resource: { db: "project", collection: "hourly_power_consumption_view" }, actions: ["find"] }
+]);
+
+db.grantPrivilegesToRole("temp_data_scientist", [
+    { resource: { db: "project", collection: "hourly_temperature_view" }, actions: ["find"] }
+]);
+
+
+////// backup
+
+
+cd C:\Users\HP\Documents\joint_project\back up folder
+mongodump --db project --collection hourly_dublin
+mongodump --db project --collection hourly_power
+mongodump --db project --collection hourly_temperature
+ /////// try to drop a collection
+db.hourly_dublin.drop()
+ //// store it back
+mongorestore --db project --collection hourly_dublin “C:\Users\HP\Documents\back up folder”
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+

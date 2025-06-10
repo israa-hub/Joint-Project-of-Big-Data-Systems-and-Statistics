@@ -1,0 +1,464 @@
+---
+title: "Joint Project"
+author: "Israa Atike D00262160"
+date: "2024-04-04"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+library(dplyr)
+# transofrming power dataset
+power_data <- read.csv("JLHome1718Power1.csv", header = TRUE, stringsAsFactors = FALSE)
+colnames(power_data) <- c("datetime", "power")
+
+power_data$datetime <- as.POSIXct(power_data$datetime, format = "%d/%m/%Y %H:%M")
+
+hourly_total_power <- power_data %>%
+  mutate(date_p = format(datetime, "%Y-%m-%d %H:00")) %>%
+  group_by(date_p) %>%
+  summarize(power_by_hour = sum(power))
+hourly_total_power$date_p <- as.POSIXct(hourly_total_power$date_p, format = "%Y-%m-%d %H:00")
+
+#hourly_total_power
+
+# transofrming temperature dataset
+temperature_data <- read.csv("JLHome1718Temperature1.csv", header = FALSE, stringsAsFactors = FALSE)
+colnames(temperature_data) <- c("datetime", "temperature")
+
+temperature_data$datetime <- as.POSIXct(temperature_data$datetime, format = "%d/%m/%Y %H:%M")
+
+temperature_data$date_t <- as.POSIXct(round(as.numeric(temperature_data$datetime) / (60 * 60)) * (60 * 60), origin = "1970-01-01")
+
+hourly_mean_temperature <- temperature_data %>%
+  group_by(date_t) %>%
+  summarize(mean_temperature = mean(temperature, na.rm = TRUE))
+
+#hourly_mean_temperature
+
+
+#merging power and temperature datasets into one dataset using date
+hourly_total_power$date_p <- as.POSIXct(hourly_total_power$date_p, format = "%Y-%m-%d %H:00")
+merged_data <- inner_join(hourly_total_power, hourly_mean_temperature, by = c("date_p" = "date_t"))
+#merged_data
+
+
+
+```
+
+
+
+
+```{r}
+
+weather_data <- read.csv("hourly_dublin_17_18_19.csv")
+
+weather_data$date <- as.POSIXct(weather_data$date, format = "%d/%m/%Y %H:%M")
+
+# Merge merged_data and weather_data
+merged_data1 <- merge(merged_data, weather_data, by.x = "date_p", by.y = "date", all = TRUE)
+#merged_data1
+
+# Rename the 'date' column to 'datetime'
+colnames(merged_data1)[1] <- "datetime"
+
+subset_data <- subset(merged_data1, datetime >= as.POSIXct("2017-10-12 23:00:00") & 
+                                         datetime <= as.POSIXct("2019-10-13 18:00:00"))
+#subset_data
+
+missing_data <- sapply(subset_data, function(x) sum(is.na(x)))
+
+#missing_data
+
+missing_percentage <- sapply(subset_data, function(x) {
+  missing_count <- sum(is.na(x))
+  total_count <- length(x)
+  percentage <- (missing_count / total_count) * 100
+  return(percentage)
+})
+
+missing_percentage
+#######since data missing is less than 5% we will delete it.
+cleaned_data <- subset_data[complete.cases(subset_data), ]
+#cleaned_data
+
+cleaned_data$datetime <- as.POSIXct(cleaned_data$datetime)
+
+# Extract month from datetime and put it in a new variable called month
+cleaned_data$month <- format(cleaned_data$datetime, "%m")
+
+
+# Extract year from datetime and put it in a new variable called year
+cleaned_data$year <- format(cleaned_data$datetime, "%Y")
+
+head(cleaned_data)
+#write.csv(cleaned_data, "stats_final_merged_data.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+
+summary(cleaned_data)
+
+
+
+boxplot(cleaned_data$power_by_hour, ylab = " Power by hour", main = "Boxplot of Power by hour", col = "skyblue")
+hist(cleaned_data$power_by_hour, xlab = "Power by hour", ylab = "Frequency",
+     main = "Histogram of power by hour", col = "lightgreen")
+
+
+
+boxplot(cleaned_data$mean_temperature,ylab="mean temperature ", main= "boxplot of mean of temperature", col = "skyblue") 
+hist(cleaned_data$mean_temperature, xlab = "mean temperature", ylab = "Frequency",
+     main = "Histogram of mean of temperature", col = "lightgreen")
+
+
+
+boxplot(cleaned_data$rain,ylab="rain", main= "boxplot of rain", col = "skyblue")
+hist(cleaned_data$rain, xlab = "Rain", ylab = "Frequency",
+     main = "Histogram of rain", col = "lightgreen")
+
+
+
+
+
+boxplot(cleaned_data$temp,ylab="temperature in the air", main= "boxplot of temperature in the air" , col = "skyblue") 
+hist(cleaned_data$temp, xlab = "Temperature (°C)", ylab = "Frequency",
+     main = "Histogram of Temperature", col = "lightgreen")
+
+
+
+
+boxplot(cleaned_data$rhum,ylab="Relative humidity (cc)", main= "boxplot of Relative humidity", col = "skyblue") 
+hist(cleaned_data$rhum,xlab = "rhum", ylab = "Frequency",
+     main = "Histogram of Relative humidity" , col = "lightgreen")
+
+
+
+
+boxplot(cleaned_data$wdsp,ylab="Mean Hourly Wind Speed", main= "boxplot of Mean Hourly Wind Speed" , col = "skyblue") 
+hist(cleaned_data$wdsp, xlab = "wdsp", ylab = "Frequency",
+     main = "Histogram of Mean Hourly Wind Speed", col = "lightgreen")
+
+
+
+
+boxplot(cleaned_data$sun,ylab="Sunshine duration", main= "boxplot of Sunshine duration", col = "skyblue") 
+hist(cleaned_data$sun, xlab = "sun", ylab = "Frequency",
+     main = "Histogram of Sunshine duration", col = "lightgreen")
+
+
+
+
+boxplot(cleaned_data$vis,ylab="Visibility", main= "boxplot of Visibility", col = "skyblue") 
+hist(cleaned_data$vis, xlab = "vis", ylab = "Frequency",
+     main = "Histogram of Visibility", col = "lightgreen")
+
+
+month_freq <- table(cleaned_data$month)
+
+barplot(month_freq, 
+        xlab = "Month", ylab = "Frequency",
+        main = "Frequency of Months", col = "skyblue")
+
+year_freq <- table(cleaned_data$year)
+
+barplot(year_freq, 
+        xlab = "years", ylab = "Frequency",
+        main = "Frequency of years", col = "lightgreen")
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+
+library(psych)
+
+## pairspanel
+selected_columns <- cleaned_data[, c( "rain", "temp", "rhum", "wdsp", "sun", "vis", "mean_temperature", "power_by_hour", "month")]
+pairs.panels(selected_columns)
+
+## pairpanels with log of power
+cleaned_data$power_log <- log(cleaned_data$power_by_hour)
+selected_columns1 <- cleaned_data[, c("power_log", "rain", "temp", "rhum", "wdsp", "sun", "vis", "mean_temperature", "power_by_hour", "month")]
+pairs.panels(selected_columns1)
+
+
+cleaned_data$power_log <- log(cleaned_data$power_by_hour)
+#cleaned_data$vis_log <- log(cleaned_data$vis)
+#cleaned_data$sun_log <- log(cleaned_data$sun)
+#cleaned_data$wdsp_log <- log(cleaned_data$wdsp)
+
+
+
+cleaned_data[which(cleaned_data$power_by_hour==172746),]
+boxplot(power_by_hour~factor(month),cleaned_data)
+
+outlier <- which(cleaned_data$power_by_hour == 172746)
+
+additional_outliers <- c(173320, 172574, 158634, 158634, 157601, 153503, 150752, 150243, 150214, 37, 39, 40, 41, 63, 66 ,90)
+
+all_outliers <- c(outlier, additional_outliers)
+
+
+
+
+
+model_with_outliers <- lm(log(power_by_hour) ~rhum , data = cleaned_data)
+
+plot(model_with_outliers, which = 1)  
+plot(model_with_outliers, which = 2)  
+hist(model_with_outliers$residuals) 
+
+summary(model_with_outliers)
+
+model_without_outliers <- lm(log(power_by_hour)~ rhum , cleaned_data[-all_outliers,])
+
+plot(model_without_outliers, which = 1)  
+plot(model_without_outliers, which = 2) 
+hist(model_without_outliers$residuals)  
+
+summary(model_without_outliers)
+
+############# model without outliers is better 
+
+
+
+model2 <- lm(log(power_by_hour) ~log(wdsp)  , data = cleaned_data)
+
+plot(model2, which = 1)  
+plot(model2, which = 2)  
+hist(model2$residuals)  
+
+summary(model2)
+
+### adjst r squared is lower
+
+
+model3 <- lm(log(power_by_hour) ~sun , data = cleaned_data)
+
+plot(model3, which = 1) 
+plot(model3, which = 2)  
+hist(model3$residuals) 
+summary(model3)
+
+
+## adjst r squared is lower
+
+
+AIC(model_without_outliers, model_with_outliers)
+BIC(model_without_outliers, model_with_outliers)
+
+
+exp(10.2722301)
+
+
+
+
+```
+
+
+
+
+
+
+```{r}
+
+###########include everything
+lm_full<-lm(log(power_by_hour)~temp+factor(month)+rhum+vis+sun+rain+mean_temperature+wdsp, cleaned_data)
+
+plot(lm_full,which=1)
+plot(lm_full,which=2)
+
+summary(lm_full)
+plot(lm_full,which=5)
+
+
+
+
+library(car)
+Anova(lm_full,typ=2)
+
+## all good
+
+
+## all good
+
+summary(lm_full)
+install.packages("car")
+
+# Load the car package
+library(car)
+Anova(lm_full,typ=2)
+
+
+###### remove  vis 
+
+lm_red<-lm(log(power_by_hour)~temp+rhum+sun+rain+mean_temperature+wdsp+factor(month), cleaned_data)
+plot(lm_red,which=1)
+plot(lm_red,which=2)
+
+plot(lm_red,which=5)
+Anova(lm_red,typ=2)
+
+
+library(car)
+Anova(lm_red,typ=2)
+#all good
+## all good
+
+summary(lm_red)
+
+AIC(lm_full, lm_red)
+BIC(lm_full, lm_red)
+
+###### reduced is better
+
+
+########### best r squared
+lm_red2<-lm(log(power_by_hour)~temp+rhum+sun+rain+mean_temperature+log(wdsp)+factor(month), cleaned_data)
+plot(lm_red2,which=1)
+plot(lm_red2,which=2)
+
+plot(lm_red2,which=5)
+Anova(lm_red2,typ=2)
+
+
+library(car)
+Anova(lm_red2,typ=2)
+#all good
+## all good
+
+
+
+summary(lm_red2)
+
+AIC(lm_red2, lm_red)
+BIC(lm_red2, lm_red)
+
+
+
+
+
+####### redcued2 is better
+
+
+
+
+
+
+
+```
+
+
+
+```{r}
+
+####### remove  11
+cleaned_data <- cleaned_data[!(cleaned_data$month %in% c( "11")), ]
+
+lm_red_final <- lm(log(power_by_hour) ~ rhum + sun+ rain + temp+
+                    mean_temperature + log(wdsp) + factor(month), data =cleaned_data)
+
+
+plot(lm_red_final,which=1)
+plot(lm_red_final,which=2)
+
+
+plot(lm_red_final,which=5)
+
+library(car)
+Anova(lm_red_final,typ=2)
+#all good
+## all good
+vif(lm_red_final)
+summary(lm_red_final)
+
+
+AIC(lm_red2, lm_red_final)
+BIC(lm_red2, lm_red_final)
+
+#### lm_red_final is better
+
+
+
+
+# Remove outliers 11 and 03
+cleaned_data <- cleaned_data[!(cleaned_data$month %in% c("11","03")), ]
+
+# Define outliers
+outlier <- which(cleaned_data$power_by_hour == 172746)
+additional_outliers <- c(173320, 172574, 158634, 158634, 157601, 153503, 150752, 150243, 150214, 37, 39, 40, 41, 63, 66 ,90)
+all_outliers <- c(outlier, additional_outliers)
+
+# Remove outliers from cleaned_data
+cleaned_data <- cleaned_data[-all_outliers, ]
+
+
+
+
+lm_red_final_no_outliers <- lm(log(power_by_hour) ~ rhum + sun+ rain + temp+
+                    mean_temperature + log(wdsp) + factor(month), data = cleaned_data)
+
+
+plot(lm_red_final_no_outliers,which=1)
+plot(lm_red_final_no_outliers,which=2)
+
+plot(lm_red_final_no_outliers,which=5)
+#Anova(lm_red_final,typ=2)
+library(car)
+Anova(lm_red_final_no_outliers,typ=2)
+## all good
+vif(lm_full)
+### all good 
+
+summary(lm_red_final_no_outliers)
+
+
+
+AIC(lm_red_final_no_outliers, lm_red_final)
+BIC(lm_red_final_no_outliers, lm_red_final)
+
+######## no outliers no 11 no 03 is better
+
+
+
+## comparing simple and multiple linear regression
+
+model_without_outliers <- lm(log(power_by_hour)~ rhum , cleaned_data[-all_outliers,])
+exp(0.0904286  )
+
+
+AIC(lm_red_final_no_outliers, model_without_outliers)
+BIC(lm_red_final_no_outliers, model_without_outliers)
+
+
+```
+
+
+
